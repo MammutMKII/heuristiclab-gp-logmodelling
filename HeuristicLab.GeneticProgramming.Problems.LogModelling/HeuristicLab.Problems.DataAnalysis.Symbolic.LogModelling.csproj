@@ -127,6 +127,7 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Extension.cs" />
     <Compile Include="ILogModellingProblem.cs" />
     <Compile Include="ILogModellingProblemData.cs" />
     <Compile Include="LogModellingCSVInstanceProvider.cs" />
@@ -145,6 +146,7 @@
       <DependentUpon>LogModellingInstanceProviderView.cs</DependentUpon>
     </Compile>
     <Compile Include="LogModellingProblemData.cs" />
+    <Compile Include="LogModelStatistics.cs" />
     <Compile Include="Plugin.cs" />
     <Compile Include="Problem.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

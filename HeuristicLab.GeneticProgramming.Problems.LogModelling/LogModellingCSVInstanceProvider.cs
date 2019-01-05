@@ -35,6 +35,7 @@ namespace HeuristicLab.Problems.Instances.DataAnalysis
 
       IEnumerable<int> trainingIndizes = Enumerable.Range(0, (csvFileParser.Rows * 2) / 3);
       int trainingPartEnd = trainingIndizes.Last();
+      //TODO: when (if not removed) separating test and training, group by caseid
       logData.TrainingPartition.Start = trainingIndizes.First();
       logData.TrainingPartition.End = trainingPartEnd;
       logData.TestPartition.Start = trainingPartEnd;

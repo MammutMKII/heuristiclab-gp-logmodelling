@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 
 using HeuristicLab.Common;
@@ -9,10 +10,9 @@ using HeuristicLab.Persistence.Default.CompositeSerializers.Storable;
 using HeuristicLab.Problems.DataAnalysis;
 using HeuristicLab.Problems.Instances;
 
-
 namespace HeuristicLab.Problems.DataAnalysis.Symbolic.LogModelling
 {
-  [Item("Log Modelling", "TODO")]
+  [Item("Log Modelling", "Modelling of event logs using process trees")]
   [Creatable(CreatableAttribute.Categories.GeneticProgrammingProblems, Priority = 900)]
   [StorableClass]
   public sealed class Problem : SymbolicExpressionTreeProblem, ILogModellingProblem, IProblemInstanceConsumer<ILogModellingProblemData>, IProblemInstanceExporter<ILogModellingProblemData>
@@ -71,53 +71,99 @@ namespace HeuristicLab.Problems.DataAnalysis.Symbolic.LogModelling
     {
       ILogModellingProblemData problemData = ProblemData;
       int[] rows = ProblemData.TrainingIndices.ToArray();
-      var caseID = problemData.Dataset.GetStringValues(problemData.CaseIDVariable, rows);
-      var timestamp = problemData.Dataset.GetDateTimeValues(problemData.TimestampVariable, rows);
-      var activity = problemData.Dataset.GetStringValues(problemData.ActivityVariable, rows);
+      var caseIDs = problemData.Dataset.GetStringValues(problemData.CaseIDVariable, rows);
+      var timestamps = problemData.Dataset.GetDateTimeValues(problemData.TimestampVariable, rows);
+      var activities = problemData.Dataset.GetStringValues(problemData.ActivityVariable, rows);
 
-      //TODO interpretation & evalutation
-      //var predicted = Interpret(tree, problemData.Dataset, rows);
+      var modelStats = Interpret(tree, caseIDs, timestamps, activities);
 
-      //OnlineCalculatorError errorState;
-      //var r = OnlinePearsonsRCalculator.Calculate(target, predicted, out errorState);
-      //if (errorState != OnlineCalculatorError.None) r = 0;
-      //return r * r;
-      return random.NextDouble();
+      //TODO: improve evaluation by adding additional optimization objectives
+      return modelStats.ValidatingCases / (double)modelStats.TotalCases;
     }
 
-    //private IEnumerable<double> Interpret(ISymbolicExpressionTree tree, IDataset dataset, IEnumerable<int> rows)
-    //{
-    //    // skip programRoot and startSymbol
-    //    return InterpretRec(tree.Root.GetSubtree(0).GetSubtree(0), dataset, rows);
-    //}
+    private LogModelStatistics Interpret(ISymbolicExpressionTree tree, IEnumerable<string> caseIDs, IEnumerable<DateTime> timestamps, IEnumerable<string> activities)
+    {
+      var modelStats = new LogModelStatistics();
 
-    //private IEnumerable<double> InterpretRec(ISymbolicExpressionTreeNode node, IDataset dataset, IEnumerable<int> rows)
-    //{
-    //    Func<ISymbolicExpressionTreeNode, ISymbolicExpressionTreeNode, Func<double, double, double>, IEnumerable<double>> binaryEval =
-    //      (left, right, f) => InterpretRec(left, dataset, rows).Zip(InterpretRec(right, dataset, rows), f);
+      //reorder from column-major to row-major
+      IEnumerable<(string caseID, DateTime timestamp, string activity)> rows = caseIDs.Zip(timestamps, Tuple.Create).Zip(activities, (tuple, activity) => (tuple.Item1, tuple.Item2, activity));
+      var cases = rows.GroupBy(tuple => tuple.caseID, (key, g) => g.OrderBy(ev => ev.timestamp).Select(ev => ev.activity));
 
-    //    switch (node.Symbol.Name)
-    //    {
-    //        case "+": return binaryEval(node.GetSubtree(0), node.GetSubtree(1), (x, y) => x + y);
-    //        case "*": return binaryEval(node.GetSubtree(0), node.GetSubtree(1), (x, y) => x * y);
-    //        case "-": return binaryEval(node.GetSubtree(0), node.GetSubtree(1), (x, y) => x - y);
-    //        case "%": return binaryEval(node.GetSubtree(0), node.GetSubtree(1), (x, y) => y.IsAlmost(0.0) ? 0.0 : x / y); // protected division
-    //        default:
-    //            {
-    //                double erc;
-    //                if (double.TryParse(node.Symbol.Name, out erc))
-    //                {
-    //                    return rows.Select(_ => erc);
-    //                }
-    //                else
-    //                {
-    //                    // assume that this is a variable name
-    //                    return dataset.GetDoubleValues(node.Symbol.Name, rows);
-    //                }
-    //            }
-    //    }
-    //}
+      modelStats.TotalCases = cases.Count();
+      modelStats.ValidatingCases = cases.Select(c => ValidateCase(tree, c)).Count(Extension.Identity);
 
+      return modelStats;
+    }
+
+    private bool ValidateCase(ISymbolicExpressionTree tree, IEnumerable<string> orderedActivities)
+    {
+      // skip programRoot and startSymbol
+      var (valid, remainingActivities) = ValidateRec(tree.Root.GetSubtree(0).GetSubtree(0), orderedActivities);
+      return valid && !remainingActivities.Any();
+    }
+
+    private (bool valid, IEnumerable<string> remainingActivities) ValidateRec(ISymbolicExpressionTreeNode node, IEnumerable<string> orderedActivities)
+    {
+      //validation fails if end of case is reached but more are expected (at this point every possible node leads to an expected activity)
+      if(!orderedActivities.Any()) return (false, orderedActivities);
+
+      switch(node.Symbol.Name)
+      {
+        case "seq":
+        {
+          return ValidateSeq(node.Subtrees, orderedActivities);
+        }
+        case "xor":
+        {
+          return ValidateXor(node.Subtrees, orderedActivities);
+        }
+        case "and":
+        {
+          return ValidateAnd(node.Subtrees, orderedActivities);
+        }
+        default:
+        {
+          var currentActivity = orderedActivities.First();
+          return (currentActivity == node.Symbol.Name, orderedActivities.Skip(1));
+        }
+      }
+    }
+
+    private (bool valid, IEnumerable<string> remainingActivities) ValidateSeq(IEnumerable<ISymbolicExpressionTreeNode> subtreeSequence, IEnumerable<string> orderedActivities)
+    {
+      //allow previous subtrees to "remove" matched activities
+      var remainingActivities = orderedActivities;
+      bool valid = true;
+      foreach(var n in subtreeSequence)
+      {
+        (valid, remainingActivities) = ValidateRec(n, remainingActivities);
+        if(!valid) break;
+      }
+      return (valid, remainingActivities);
+    }
+
+    private (bool valid, IEnumerable<string> remainingActivities) ValidateXor(IEnumerable<ISymbolicExpressionTreeNode> subtreeSet, IEnumerable<string> orderedActivities)
+    {
+      //do not allow subtrees to remove activities
+      var validatingSubtrees = subtreeSet.Select(n => ValidateRec(n, orderedActivities)).Where(r => r.valid);
+      if(validatingSubtrees.Count() == 1)
+        return validatingSubtrees.Single();
+      else
+        return (false, orderedActivities);
+    }
+
+    private (bool valid, IEnumerable<string> remainingActivities) ValidateAnd(IEnumerable<ISymbolicExpressionTreeNode> subtreeBag, IEnumerable<string> orderedActivities)
+    {
+      //TODO: permute runtime complexity severely limits the feasible maximumArity of "and"
+      //TODO: instead of reevaluating for all permutations, reuse evaluation of common subsequences, e.g. by evaluating at permutation generation
+      var subtreeSequencePermutations = subtreeBag.Permute();
+      //not sure if there is any better expression to evaluate only to the first success and only once
+      var firstPositiveResult = subtreeSequencePermutations.Select(ssp => ValidateSeq(ssp, orderedActivities)).SkipWhile(result => !result.valid).Take(1);
+      if(firstPositiveResult.Any())
+        return firstPositiveResult.Single();
+      else
+        return (false, orderedActivities);
+    }
 
     #region events
     private void RegisterEventHandlers()
@@ -136,24 +182,26 @@ namespace HeuristicLab.Problems.DataAnalysis.Symbolic.LogModelling
       OnReset();
     }
 
-    private void ProblemData_Changed(object sender, EventArgs e) => OnReset();
+    private void ProblemData_Changed(object sender, EventArgs e)
+    {
+      OnProblemDataChanged();
+      OnReset();
+    }
 
     private void OnProblemDataChanged()
     {
       UpdateGrammar();
 
-      EventHandler handler = ProblemDataChanged;
-      if(handler != null)
-      {
-        handler(this, EventArgs.Empty);
-      }
+      ProblemDataChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private void UpdateGrammar()
     {
+      //TODO: ensuring that xor receives a set could be beneficial
       // whenever ProblemData is changed we create a new grammar with the necessary symbols
       var g = new SimpleSymbolicExpressionGrammar();
-      g.AddSymbols(new[] { "+", "*", "%", "-" }, 2, 2); // % is protected division 1/0 := 0
+      g.AddSymbols(new[] { "seq", "xor", "and" }, 2, 2); //TODO: arity is currently limited by performance
+      //TODO: currently not able to overfit
 
       var activities = ProblemData.ActivityVariableTrainingValues.Distinct();
       //TODO get possible activity names into HL, this doesn't work

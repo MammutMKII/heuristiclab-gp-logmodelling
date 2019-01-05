@@ -2,7 +2,7 @@
 
 namespace HeuristicLab.Problems.DataAnalysis.Symbolic.LogModelling
 {
-  [Plugin("HeuristicLab.Problems.DataAnalysis.Symbolic.LogModelling", "Provides classes to represent and model event logs as syntax trees", "1.0.0")]
+  [Plugin("HeuristicLab.Problems.DataAnalysis.Symbolic.LogModelling", "Provides classes to represent and model event logs as process trees", "1.0.0")]
   [PluginFile("HeuristicLab.Problems.DataAnalysis.Symbolic.LogModelling-1.0.dll", PluginFileType.Assembly)]
   [PluginDependency("HeuristicLab.Collections", "3.3")]
   [PluginDependency("HeuristicLab.Common", "3.3")]

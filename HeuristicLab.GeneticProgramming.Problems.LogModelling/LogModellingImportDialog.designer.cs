@@ -105,6 +105,7 @@ namespace HeuristicLab.Problems.Instances.DataAnalysis.Views
       this.ProblemDataSettingsGroupBox.Controls.SetChildIndex(this.ErrorTextBox, 0);
       // 
       // ErrorTextBox
+      // TODO: remove error text box; for this, make the importdialog independent of dataanalysis
       // 
       this.ErrorTextBox.Size = new System.Drawing.Size(435, 103);
       // 
@@ -134,8 +135,8 @@ namespace HeuristicLab.Problems.Instances.DataAnalysis.Views
       // 
       // TimestampVariableComboBox
       // 
-      this.TimestampVariableComboBox.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left)
-      | System.Windows.Forms.AnchorStyles.Right)));
+      this.TimestampVariableComboBox.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
+            | System.Windows.Forms.AnchorStyles.Right)));
       this.TimestampVariableComboBox.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
       this.TimestampVariableComboBox.FormattingEnabled = true;
       this.TimestampVariableComboBox.Location = new System.Drawing.Point(76, 41);
@@ -163,8 +164,8 @@ namespace HeuristicLab.Problems.Instances.DataAnalysis.Views
       // 
       // ActivityVariableComboBox
       // 
-      this.ActivityVariableComboBox.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left)
-      | System.Windows.Forms.AnchorStyles.Right)));
+      this.ActivityVariableComboBox.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
+            | System.Windows.Forms.AnchorStyles.Right)));
       this.ActivityVariableComboBox.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
       this.ActivityVariableComboBox.FormattingEnabled = true;
       this.ActivityVariableComboBox.Location = new System.Drawing.Point(280, 41);
@@ -183,8 +184,8 @@ namespace HeuristicLab.Problems.Instances.DataAnalysis.Views
       // 
       // CaseIDVariableComboBox
       // 
-      this.CaseIDVariableComboBox.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left)
-      | System.Windows.Forms.AnchorStyles.Right)));
+      this.CaseIDVariableComboBox.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
+            | System.Windows.Forms.AnchorStyles.Right)));
       this.CaseIDVariableComboBox.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
       this.CaseIDVariableComboBox.FormattingEnabled = true;
       this.CaseIDVariableComboBox.Location = new System.Drawing.Point(280, 17);
