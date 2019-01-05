@@ -90,7 +90,8 @@ namespace HeuristicLab.Problems.DataAnalysis.Symbolic.LogModelling
       var cases = rows.GroupBy(tuple => tuple.caseID, (key, g) => g.OrderBy(ev => ev.timestamp).Select(ev => ev.activity));
 
       modelStats.TotalCases = cases.Count();
-      modelStats.ValidatingCases = cases.Select(c => ValidateCase(tree, c)).Count(Extension.Identity);
+      var validatedCases = cases.Select(c => ValidateCase(tree, c));
+      modelStats.ValidatingCases = validatedCases.Count(Extension.Identity);
 
       return modelStats;
     }
@@ -121,6 +122,14 @@ namespace HeuristicLab.Problems.DataAnalysis.Symbolic.LogModelling
         {
           return ValidateAnd(node.Subtrees, orderedActivities);
         }
+        case "loop":
+        {
+          return ValidateLoop(node.Subtrees, orderedActivities);
+        }
+        case "optional":
+        {
+          return ValidateOptional(node.GetSubtree(0), orderedActivities);
+        }
         default:
         {
           var currentActivity = orderedActivities.First();
@@ -140,6 +149,28 @@ namespace HeuristicLab.Problems.DataAnalysis.Symbolic.LogModelling
         if(!valid) break;
       }
       return (valid, remainingActivities);
+    }
+
+    private (bool valid, IEnumerable<string> remainingActivities) ValidateLoop(IEnumerable<ISymbolicExpressionTreeNode> subtreeSequence, IEnumerable<string> orderedActivities)
+    {
+      var remainingActivities = orderedActivities;
+
+      int LIMIT = 20;
+      int i = 0;
+      (bool intermediateValid, IEnumerable<string> intermediateRemainingActivities) result;
+      while(i++ < LIMIT && (result = ValidateSeq(subtreeSequence, remainingActivities)).intermediateValid)
+        remainingActivities = result.intermediateRemainingActivities;
+
+      return (true, remainingActivities);
+    }
+
+    private (bool valid, IEnumerable<string> remainingActivities) ValidateOptional(ISymbolicExpressionTreeNode subtree, IEnumerable<string> orderedActivities)
+    {
+      var result = ValidateRec(subtree, orderedActivities);
+      if(result.valid)
+        return result;
+      else
+        return (true, orderedActivities);
     }
 
     private (bool valid, IEnumerable<string> remainingActivities) ValidateXor(IEnumerable<ISymbolicExpressionTreeNode> subtreeSet, IEnumerable<string> orderedActivities)
@@ -200,8 +231,13 @@ namespace HeuristicLab.Problems.DataAnalysis.Symbolic.LogModelling
       //TODO: ensuring that xor receives a set could be beneficial
       // whenever ProblemData is changed we create a new grammar with the necessary symbols
       var g = new SimpleSymbolicExpressionGrammar();
-      g.AddSymbols(new[] { "seq", "xor", "and" }, 2, 2); //TODO: arity is currently limited by performance
-      //TODO: currently not able to overfit
+      g.AddSymbols(new[] { "seq", "xor" }, 2, 5);
+      g.AddSymbol("and", 2, 2); //TODO: arity is currently limited by performance
+      //loop validates at least one and then as many repetitions of the sequence as possible (greedy)
+      g.AddSymbol("loop", 1, 5);
+      //optional validates its child node
+      g.AddSymbol("optional", 1, 1);
+      //TODO: currently not able to overfit for relatively simple logs, the model is missing something or is too large
 
       var activities = ProblemData.ActivityVariableTrainingValues.Distinct();
       //TODO get possible activity names into HL, this doesn't work
