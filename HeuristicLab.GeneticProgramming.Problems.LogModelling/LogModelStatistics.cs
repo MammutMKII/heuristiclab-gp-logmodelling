@@ -10,5 +10,6 @@ namespace HeuristicLab.Problems.DataAnalysis.Symbolic.LogModelling
   {
     public int TotalCases { get; set; }
     public int ValidatingCases { get; set; }
+    public int NumberOfProcessedNodes { get; set; }
   }
 }

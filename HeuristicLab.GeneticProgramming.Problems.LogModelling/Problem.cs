@@ -78,7 +78,7 @@ namespace HeuristicLab.Problems.DataAnalysis.Symbolic.LogModelling
       var modelStats = Interpret(tree, caseIDs, timestamps, activities);
 
       //TODO: improve evaluation by adding additional optimization objectives
-      return modelStats.ValidatingCases / (double)modelStats.TotalCases;
+      return modelStats.ValidatingCases / (double)modelStats.TotalCases + 0.01 / modelStats.NumberOfProcessedNodes;
     }
 
     private LogModelStatistics Interpret(ISymbolicExpressionTree tree, IEnumerable<string> caseIDs, IEnumerable<DateTime> timestamps, IEnumerable<string> activities)
@@ -91,22 +91,23 @@ namespace HeuristicLab.Problems.DataAnalysis.Symbolic.LogModelling
 
       modelStats.TotalCases = cases.Count();
       var validatedCases = cases.Select(c => ValidateCase(tree, c));
-      modelStats.ValidatingCases = validatedCases.Count(Extension.Identity);
+      modelStats.ValidatingCases = validatedCases.Count(r => r.valid);
+      modelStats.NumberOfProcessedNodes = validatedCases.Sum(r => r.processedNodes);
 
       return modelStats;
     }
 
-    private bool ValidateCase(ISymbolicExpressionTree tree, IEnumerable<string> orderedActivities)
+    private (bool valid, int processedNodes) ValidateCase(ISymbolicExpressionTree tree, IEnumerable<string> orderedActivities)
     {
       // skip programRoot and startSymbol
-      var (valid, remainingActivities) = ValidateRec(tree.Root.GetSubtree(0).GetSubtree(0), orderedActivities);
-      return valid && !remainingActivities.Any();
+      var (valid, remainingActivities, processedNodes) = ValidateRec(tree.Root.GetSubtree(0).GetSubtree(0), orderedActivities);
+      return (valid && !remainingActivities.Any(), processedNodes);
     }
 
-    private (bool valid, IEnumerable<string> remainingActivities) ValidateRec(ISymbolicExpressionTreeNode node, IEnumerable<string> orderedActivities)
+    private (bool valid, IEnumerable<string> remainingActivities, int processedNodes) ValidateRec(ISymbolicExpressionTreeNode node, IEnumerable<string> orderedActivities)
     {
       //validation fails if end of case is reached but more are expected (at this point every possible node leads to an expected activity)
-      if(!orderedActivities.Any()) return (false, orderedActivities);
+      if(!orderedActivities.Any()) return (false, orderedActivities, 1);
 
       switch(node.Symbol.Name)
       {
@@ -133,67 +134,86 @@ namespace HeuristicLab.Problems.DataAnalysis.Symbolic.LogModelling
         default:
         {
           var currentActivity = orderedActivities.First();
-          return (currentActivity == node.Symbol.Name, orderedActivities.Skip(1));
+          return (currentActivity == node.Symbol.Name, orderedActivities.Skip(1), 1);
         }
       }
     }
 
-    private (bool valid, IEnumerable<string> remainingActivities) ValidateSeq(IEnumerable<ISymbolicExpressionTreeNode> subtreeSequence, IEnumerable<string> orderedActivities)
+    private (bool valid, IEnumerable<string> remainingActivities, int processedNodes) ValidateSeq(IEnumerable<ISymbolicExpressionTreeNode> subtreeSequence, IEnumerable<string> orderedActivities)
     {
       //allow previous subtrees to "remove" matched activities
       var remainingActivities = orderedActivities;
+      int processedNodes = 1;
       bool valid = true;
       foreach(var n in subtreeSequence)
       {
-        (valid, remainingActivities) = ValidateRec(n, remainingActivities);
+        int nodes;
+        (valid, remainingActivities, nodes) = ValidateRec(n, remainingActivities);
+        processedNodes += nodes;
         if(!valid) break;
       }
-      return (valid, remainingActivities);
+      return (valid, remainingActivities, processedNodes);
     }
 
-    private (bool valid, IEnumerable<string> remainingActivities) ValidateLoop(IEnumerable<ISymbolicExpressionTreeNode> subtreeSequence, IEnumerable<string> orderedActivities)
+    private (bool valid, IEnumerable<string> remainingActivities, int processedNodes) ValidateLoop(IEnumerable<ISymbolicExpressionTreeNode> subtreeSequence, IEnumerable<string> orderedActivities)
     {
       var remainingActivities = orderedActivities;
+      var processedNodes = 1;
 
-      int LIMIT = 20;
+      const int LIMIT = 20;
       int i = 0;
-      (bool intermediateValid, IEnumerable<string> intermediateRemainingActivities) result;
+      (bool intermediateValid, IEnumerable<string> intermediateRemainingActivities, int nodes) result;
       while(i++ < LIMIT && (result = ValidateSeq(subtreeSequence, remainingActivities)).intermediateValid)
+      {
         remainingActivities = result.intermediateRemainingActivities;
+        processedNodes += result.nodes;
+      }
 
-      return (true, remainingActivities);
+      return (true, remainingActivities, processedNodes);
     }
 
-    private (bool valid, IEnumerable<string> remainingActivities) ValidateOptional(ISymbolicExpressionTreeNode subtree, IEnumerable<string> orderedActivities)
+    private (bool valid, IEnumerable<string> remainingActivities, int processedNodes) ValidateOptional(ISymbolicExpressionTreeNode subtree, IEnumerable<string> orderedActivities)
     {
       var result = ValidateRec(subtree, orderedActivities);
       if(result.valid)
+      {
+        result.processedNodes++;
         return result;
+      }
       else
-        return (true, orderedActivities);
+        return (true, orderedActivities, result.processedNodes+1);
     }
 
-    private (bool valid, IEnumerable<string> remainingActivities) ValidateXor(IEnumerable<ISymbolicExpressionTreeNode> subtreeSet, IEnumerable<string> orderedActivities)
+    private (bool valid, IEnumerable<string> remainingActivities, int processedNodes) ValidateXor(IEnumerable<ISymbolicExpressionTreeNode> subtreeSet, IEnumerable<string> orderedActivities)
     {
       //do not allow subtrees to remove activities
-      var validatingSubtrees = subtreeSet.Select(n => ValidateRec(n, orderedActivities)).Where(r => r.valid);
-      if(validatingSubtrees.Count() == 1)
-        return validatingSubtrees.Single();
+      var validationResults = subtreeSet.Select(n => ValidateRec(n, orderedActivities));
+      var positiveResults = validationResults.Where(r => r.valid);
+      int processedNodes = validationResults.Select(r => r.processedNodes).Sum() + 1;
+      if(positiveResults.Count() == 1)
+      {
+        var subtree = positiveResults.Single();
+        return (subtree.valid, subtree.remainingActivities, processedNodes);
+      }
       else
-        return (false, orderedActivities);
+        return (false, orderedActivities, processedNodes);
     }
 
-    private (bool valid, IEnumerable<string> remainingActivities) ValidateAnd(IEnumerable<ISymbolicExpressionTreeNode> subtreeBag, IEnumerable<string> orderedActivities)
+    private (bool valid, IEnumerable<string> remainingActivities, int processedNodes) ValidateAnd(IEnumerable<ISymbolicExpressionTreeNode> subtreeBag, IEnumerable<string> orderedActivities)
     {
       //TODO: permute runtime complexity severely limits the feasible maximumArity of "and"
       //TODO: instead of reevaluating for all permutations, reuse evaluation of common subsequences, e.g. by evaluating at permutation generation
       var subtreeSequencePermutations = subtreeBag.Permute();
-      //not sure if there is any better expression to evaluate only to the first success and only once
-      var firstPositiveResult = subtreeSequencePermutations.Select(ssp => ValidateSeq(ssp, orderedActivities)).SkipWhile(result => !result.valid).Take(1);
-      if(firstPositiveResult.Any())
-        return firstPositiveResult.Single();
-      else
-        return (false, orderedActivities);
+
+      var processedNodes = 1;
+      foreach(var ssp in subtreeSequencePermutations)
+      {
+        var validationResult = ValidateSeq(ssp, orderedActivities);
+        processedNodes += validationResult.processedNodes;
+        if(validationResult.valid)
+          return (true, validationResult.remainingActivities, processedNodes);
+      }
+      return (false, orderedActivities, processedNodes);
     }
 
     #region events

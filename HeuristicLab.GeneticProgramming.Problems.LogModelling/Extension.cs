@@ -8,8 +8,6 @@ namespace HeuristicLab.Problems.DataAnalysis.Symbolic.LogModelling
 {
   public static class Extension
   {
-    public static T Identity<T>(T x) => x;
-
     public static IEnumerable<IEnumerable<T>> Permute<T>(this IEnumerable<T> source)
     {
       return PermuteRec(source);
